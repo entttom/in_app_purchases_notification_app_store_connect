@@ -1,0 +1,23 @@
+{
+  "name": "in-app-purchases-notification-app-store-connect",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Apple App Store Server Notifications webhook for Pushover on Vercel",
+  "scripts": {
+    "dev": "npx vercel dev",
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@apple/app-store-server-library": "^2.0.0",
+    "@upstash/redis": "^1.34.9",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.9",
+    "@vercel/node": "^5.1.16",
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.8"
+  }
+}

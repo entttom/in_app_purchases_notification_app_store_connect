@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "strict": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "types": ["node", "vitest/globals"],
+    "lib": ["ES2022", "DOM"],
+    "outDir": "dist"
+  },
+  "include": ["api/**/*.ts", "src/**/*.ts", "tests/**/*.ts"]
+}
