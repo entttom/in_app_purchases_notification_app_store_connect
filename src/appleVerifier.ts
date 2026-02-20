@@ -119,6 +119,15 @@ function ensureString(value: unknown, field: string): string {
   return value;
 }
 
+function optionalNonEmptyString(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 function ensureNotificationPayload(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object") {
     throw new Error("Apple notification payload is not an object.");
@@ -145,10 +154,21 @@ function extractBundleIdFromSignedPayload(signedPayload: string): string | null 
   try {
     const payloadJson = Buffer.from(parts[1], "base64url").toString("utf8");
     const payload = JSON.parse(payloadJson) as Record<string, unknown>;
-    const bundleId = payload.bundleId;
-    if (typeof bundleId === "string" && bundleId.length > 0) {
-      return bundleId;
+
+    const topLevelBundleId = optionalNonEmptyString(payload.bundleId);
+    if (topLevelBundleId) {
+      return topLevelBundleId;
     }
+
+    if (payload.data && typeof payload.data === "object") {
+      const nestedBundleId = optionalNonEmptyString(
+        (payload.data as Record<string, unknown>).bundleId
+      );
+      if (nestedBundleId) {
+        return nestedBundleId;
+      }
+    }
+
     return null;
   } catch {
     return null;
@@ -231,13 +251,23 @@ export async function verifyAppleNotification(
       decodedPayload.notificationType,
       "notificationType"
     );
-    const bundleId = ensureString(decodedPayload.bundleId, "bundleId");
-    ensureBundleIdMatches(app.bundleId, bundleId);
-
     const data =
       decodedPayload.data && typeof decodedPayload.data === "object"
         ? (decodedPayload.data as Record<string, unknown>)
         : undefined;
+
+    const bundleId =
+      optionalNonEmptyString(decodedPayload.bundleId) ??
+      optionalNonEmptyString(data?.bundleId);
+
+    if (!bundleId) {
+      throw new Error(
+        "Apple payload is missing required field 'bundleId' (expected at payload.bundleId or payload.data.bundleId)."
+      );
+    }
+
+    ensureBundleIdMatches(app.bundleId, bundleId);
+
     const signedTransactionInfo =
       data && typeof data.signedTransactionInfo === "string"
         ? data.signedTransactionInfo
@@ -254,9 +284,9 @@ export async function verifyAppleNotification(
       subtype:
         typeof decodedPayload.subtype === "string" ? decodedPayload.subtype : null,
       environment:
-        typeof decodedPayload.environment === "string"
-          ? decodedPayload.environment
-          : "UNKNOWN",
+        optionalNonEmptyString(decodedPayload.environment) ??
+        optionalNonEmptyString(data?.environment) ??
+        "UNKNOWN",
       bundleId,
       appAppleId: app.appAppleId,
       pushoverUserKey: app.pushoverUserKey,
