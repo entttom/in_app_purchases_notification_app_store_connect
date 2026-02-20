@@ -7,7 +7,8 @@
     "dev": "npx vercel dev",
     "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test-notification": "node scripts/request-test-notification.js"
   },
   "dependencies": {
     "@apple/app-store-server-library": "^2.0.0",

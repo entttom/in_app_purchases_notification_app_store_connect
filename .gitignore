@@ -5,3 +5,10 @@ dist/
 
 certs/apple/*
 !certs/apple/.gitkeep
+!certs/apple/*.cer
+!certs/apple/*.crt
+!certs/apple/*.pem
+!certs/apple/*.der
+
+# App Store API private keys should never be committed.
+AuthKey_*.p8
