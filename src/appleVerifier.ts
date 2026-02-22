@@ -4,8 +4,14 @@ import { Environment, SignedDataVerifier } from "@apple/app-store-server-library
 import type { AppConfig } from "./env";
 
 export type DecodedTransactionInfo = {
+  originalTransactionId?: string;
   productId?: string;
   transactionId?: string;
+  originalPurchaseDate?: number;
+  purchaseDate?: number;
+  expiresDate?: number;
+  transactionReason?: string;
+  offerDiscountType?: string;
   price?: number;
   currency?: string;
 };
@@ -128,6 +134,21 @@ function optionalNonEmptyString(value: unknown): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
+function optionalFiniteNumber(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+
+  return undefined;
+}
+
 function ensureNotificationPayload(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object") {
     throw new Error("Apple notification payload is not an object.");
@@ -187,21 +208,29 @@ async function decodeTransactionInfo(
     signedTransactionInfo
   )) as Record<string, unknown>;
 
-  const price =
-    typeof decoded.price === "number"
-      ? decoded.price
-      : typeof decoded.price === "string"
-        ? Number(decoded.price)
-        : undefined;
-
   return {
+    originalTransactionId:
+      typeof decoded.originalTransactionId === "string"
+        ? decoded.originalTransactionId
+        : undefined,
     productId:
       typeof decoded.productId === "string" ? decoded.productId : undefined,
     transactionId:
       typeof decoded.transactionId === "string"
         ? decoded.transactionId
         : undefined,
-    price: Number.isFinite(price) ? price : undefined,
+    originalPurchaseDate: optionalFiniteNumber(decoded.originalPurchaseDate),
+    purchaseDate: optionalFiniteNumber(decoded.purchaseDate),
+    expiresDate: optionalFiniteNumber(decoded.expiresDate),
+    transactionReason:
+      typeof decoded.transactionReason === "string"
+        ? decoded.transactionReason
+        : undefined,
+    offerDiscountType:
+      typeof decoded.offerDiscountType === "string"
+        ? decoded.offerDiscountType
+        : undefined,
+    price: optionalFiniteNumber(decoded.price),
     currency:
       typeof decoded.currency === "string" ? decoded.currency : undefined
   };

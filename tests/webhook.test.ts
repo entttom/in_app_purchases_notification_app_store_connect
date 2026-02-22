@@ -74,6 +74,7 @@ async function invokeHandler(
     }),
     markNotificationAsNew: vi.fn().mockResolvedValue(true),
     sendPushover: vi.fn().mockResolvedValue(undefined),
+    determineSubscriptionLifecycleHint: vi.fn().mockResolvedValue(undefined),
     log: vi.fn(),
     ...overrides
   });
@@ -159,6 +160,48 @@ describe("createWebhookHandler", () => {
 
     expect(response.statusCode).toBe(200);
     expect(sendPushover).toHaveBeenCalledTimes(1);
+  });
+
+  it("includes lifecycle details for trial to paid renewals", async () => {
+    const sendPushover = vi.fn().mockResolvedValue(undefined);
+    const response = await invokeHandler(
+      {
+        method: "POST",
+        query: { secret: "super-secret" },
+        body: { signedPayload: "jws-data" }
+      },
+      {
+        sendPushover,
+        determineSubscriptionLifecycleHint: vi
+          .fn()
+          .mockResolvedValue("FIRST_PAID_AFTER_TRIAL"),
+        verifyNotification: vi.fn().mockResolvedValue({
+          notificationUUID: "uuid-renew",
+          notificationType: "DID_RENEW",
+          subtype: "BILLING_RECOVERY",
+          environment: "Production",
+          bundleId: "com.example.app",
+          appAppleId: 1234567890,
+          pushoverUserKey: "pushover-user-key",
+          pushoverDevice: undefined,
+          transactionInfo: {
+            productId: "pro_yearly",
+            transactionId: "1000001111222233",
+            transactionReason: "RENEWAL",
+            offerDiscountType: "FREE_TRIAL"
+          }
+        })
+      }
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(sendPushover).toHaveBeenCalledTimes(1);
+    expect(sendPushover).toHaveBeenCalledWith(
+      expect.anything(),
+      "In-App Kauf",
+      expect.stringContaining("lifecycle=FIRST_PAID_AFTER_TRIAL"),
+      { userKey: "pushover-user-key", device: undefined }
+    );
   });
 
   it("ignores unrelated events", async () => {

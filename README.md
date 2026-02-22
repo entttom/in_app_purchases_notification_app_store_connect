@@ -2,7 +2,7 @@
 
 Production-ready webhook for Apple App Store Server Notifications V2.
 
-It verifies Apple-signed payloads, filters purchase/refund events, deduplicates notifications with Upstash Redis, and sends concise alerts through Pushover.
+It verifies Apple-signed payloads, filters purchase/refund events, uses Upstash Redis for deduplication and subscription lifecycle hints, and sends concise alerts through Pushover.
 
 ## What This Service Does
 
@@ -11,6 +11,7 @@ It verifies Apple-signed payloads, filters purchase/refund events, deduplicates 
 - Supports both Sandbox and Production notifications
 - Handles single-app and multi-app configurations
 - Deduplicates by `notificationUUID` for 30 days
+- Tracks lightweight subscription state per `originalTransactionId` for 730 days (trial/renewal context)
 - Sends Pushover notifications only for selected event types
 - Returns deterministic HTTP status codes so Apple retry behavior works as expected
 
@@ -24,8 +25,9 @@ It verifies Apple-signed payloads, filters purchase/refund events, deduplicates 
    - `REFUND`: `REFUND`
    - everything else is ignored
 5. `notificationUUID` is written to Upstash Redis using `SET NX EX`.
-6. If the UUID is new, a Pushover message is sent.
-7. Structured JSON log entry is emitted (`ignored`, `deduped`, `pushed`, `error`).
+6. Subscription state is read/updated in Upstash Redis for lifecycle hints (`TRIAL_START`, `FIRST_PAID_AFTER_TRIAL`, `RENEWAL`) when possible.
+7. If the UUID is new, a Pushover message is sent.
+8. Structured JSON log entry is emitted (`ignored`, `deduped`, `pushed`, `error`).
 
 ## Endpoint Contract
 
@@ -66,7 +68,11 @@ It verifies Apple-signed payloads, filters purchase/refund events, deduplicates 
   - `product=<productId>`
   - `env=<environment>`
   - `tx=<shortTransactionId>`
-  - optional: `amount=<price currency>`
+  - optional: `subtype=<subtype>`
+  - optional: `reason=<transactionReason>`
+  - optional: `offer=<offerDiscountType>`
+  - optional: `lifecycle=<TRIAL_START|FIRST_PAID_AFTER_TRIAL|RENEWAL>`
+  - optional: `amount=<price currency>` (Apple `price` is converted from milliunits, e.g. `29990 -> 29.99 EUR`)
 
 ## Project Structure
 
@@ -79,6 +85,7 @@ src/
   eventClassifier.ts                    # Maps notificationType -> PURCHASE/REFUND/IGNORE
   messageBuilder.ts                     # Builds push title/body
   dedupeStore.ts                        # Upstash Redis dedupe (SET NX EX)
+  subscriptionStateStore.ts             # Upstash Redis subscription lifecycle hints
   pushover.ts                           # Pushover API integration
   env.ts                                # Environment validation (zod)
 tests/
@@ -207,11 +214,14 @@ Behavior:
 ## Reliability and Idempotency
 
 - Deduplication key: `appstore:notification:<notificationUUID>`
+- Subscription state key: `appstore:subscription:<originalTransactionId>`
 - Storage: Upstash Redis REST
 - TTL: `30 days` (`2,592,000` seconds)
+- Subscription state TTL: `730 days` (`63,072,000` seconds)
 - Effect:
   - first time UUID: process + send push
   - repeated UUID: skip push, return `200`
+  - subscription state is updated per event and can add `lifecycle=...` hints to push messages
 
 If Redis or Pushover fails, the endpoint returns `500`, allowing Apple to retry later.
 

@@ -6,9 +6,13 @@ export type MessageInput = {
   action: PushableAction;
   appBundleId: string;
   notificationType: string;
+  subtype?: string | null;
   environment: string;
   productId?: string;
   transactionId?: string;
+  transactionReason?: string;
+  offerDiscountType?: string;
+  subscriptionLifecycle?: string;
   price?: number;
   currency?: string;
 };
@@ -35,11 +39,19 @@ function formatAmount(price: number | undefined, currency: string | undefined): 
     return "n/a";
   }
 
+  // Apple sends transaction prices in milliunits.
+  const amountInMajorUnit = price / 1000;
+  const formattedAmount = new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 3,
+    useGrouping: false
+  }).format(amountInMajorUnit);
+
   if (currency) {
-    return `${price} ${currency}`;
+    return `${formattedAmount} ${currency}`;
   }
 
-  return String(price);
+  return formattedAmount;
 }
 
 export function buildPushoverMessage(input: MessageInput): PushoverMessage {
@@ -52,6 +64,22 @@ export function buildPushoverMessage(input: MessageInput): PushoverMessage {
     `env=${input.environment}`,
     `tx=${shortTransactionId(input.transactionId)}`
   ];
+
+  if (input.subtype) {
+    parts.push(`subtype=${input.subtype}`);
+  }
+
+  if (input.transactionReason) {
+    parts.push(`reason=${input.transactionReason}`);
+  }
+
+  if (input.offerDiscountType) {
+    parts.push(`offer=${input.offerDiscountType}`);
+  }
+
+  if (input.subscriptionLifecycle) {
+    parts.push(`lifecycle=${input.subscriptionLifecycle}`);
+  }
 
   const amount = formatAmount(input.price, input.currency);
   if (amount !== "n/a") {

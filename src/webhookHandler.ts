@@ -4,6 +4,7 @@ import { loadConfig, type AppConfig } from "./env";
 import { classifyNotificationType } from "./eventClassifier";
 import { buildPushoverMessage } from "./messageBuilder";
 import { sendPushoverNotification, type PushoverTarget } from "./pushover";
+import { determineSubscriptionLifecycleHint } from "./subscriptionStateStore";
 
 type WebhookResult = { ok: boolean; [key: string]: unknown };
 
@@ -43,6 +44,11 @@ type WebhookDependencies = {
     message: string,
     target?: PushoverTarget
   ) => Promise<void>;
+  determineSubscriptionLifecycleHint: (
+    notificationType: string,
+    transactionInfo: VerifiedNotification["transactionInfo"],
+    config: AppConfig
+  ) => Promise<string | undefined>;
   log: (payload: LogPayload) => void;
 };
 
@@ -51,6 +57,7 @@ const defaultDependencies: WebhookDependencies = {
   verifyNotification: verifyAppleNotification,
   markNotificationAsNew,
   sendPushover: sendPushoverNotification,
+  determineSubscriptionLifecycleHint,
   log: (payload) => {
     console.log(JSON.stringify(payload));
   }
@@ -182,13 +189,28 @@ export function createWebhookHandler(
         return;
       }
 
+      let subscriptionLifecycle: string | undefined;
+      try {
+        subscriptionLifecycle = await deps.determineSubscriptionLifecycleHint(
+          verified.notificationType,
+          verified.transactionInfo,
+          config
+        );
+      } catch {
+        subscriptionLifecycle = undefined;
+      }
+
       const message = buildPushoverMessage({
         action: eventAction,
         appBundleId: verified.bundleId,
         notificationType: verified.notificationType,
+        subtype: verified.subtype,
         environment: verified.environment,
         productId: verified.transactionInfo?.productId,
         transactionId: verified.transactionInfo?.transactionId,
+        transactionReason: verified.transactionInfo?.transactionReason,
+        offerDiscountType: verified.transactionInfo?.offerDiscountType,
+        subscriptionLifecycle,
         price: verified.transactionInfo?.price,
         currency: verified.transactionInfo?.currency
       });
