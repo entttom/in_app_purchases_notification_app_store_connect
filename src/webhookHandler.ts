@@ -118,6 +118,41 @@ function buildLogPayload(
   };
 }
 
+function isSandboxEnvironment(environment: string): boolean {
+  return environment.trim().toLowerCase() === "sandbox";
+}
+
+function isLikelyMonthlyRenewNotification(
+  verified: VerifiedNotification
+): boolean {
+  if (verified.notificationType !== "DID_RENEW") {
+    return false;
+  }
+
+  const purchaseDate = verified.transactionInfo?.purchaseDate;
+  const expiresDate = verified.transactionInfo?.expiresDate;
+
+  if (
+    typeof purchaseDate === "number" &&
+    Number.isFinite(purchaseDate) &&
+    typeof expiresDate === "number" &&
+    Number.isFinite(expiresDate) &&
+    expiresDate > purchaseDate
+  ) {
+    const durationInDays = (expiresDate - purchaseDate) / (24 * 60 * 60 * 1000);
+    if (durationInDays >= 27 && durationInDays <= 32) {
+      return true;
+    }
+  }
+
+  const productId = verified.transactionInfo?.productId?.trim().toLowerCase();
+  if (!productId) {
+    return false;
+  }
+
+  return productId.includes("monthly") || productId.includes("month");
+}
+
 export function createWebhookHandler(
   overrides: Partial<WebhookDependencies> = {}
 ): (request: WebhookRequest, response: WebhookResponse) => Promise<void> {
@@ -172,6 +207,18 @@ export function createWebhookHandler(
 
     const eventAction = classifyNotificationType(verified.notificationType);
     if (eventAction === "IGNORE") {
+      deps.log(buildLogPayload("ignored", verified));
+      responseJson(response, 200, { ok: true, ignored: true });
+      return;
+    }
+
+    if (isSandboxEnvironment(verified.environment)) {
+      deps.log(buildLogPayload("ignored", verified));
+      responseJson(response, 200, { ok: true, ignored: true });
+      return;
+    }
+
+    if (isLikelyMonthlyRenewNotification(verified)) {
       deps.log(buildLogPayload("ignored", verified));
       responseJson(response, 200, { ok: true, ignored: true });
       return;

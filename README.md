@@ -8,7 +8,8 @@ It verifies Apple-signed payloads, filters purchase/refund events, uses Upstash 
 
 - Exposes a Vercel endpoint at `POST /api/app-store-notifications/<WEBHOOK_SECRET>`
 - Verifies `signedPayload` using Apple's official App Store Server library
-- Supports both Sandbox and Production notifications
+- Verifies both Sandbox and Production notifications, but only sends Pushover for Production
+- Ignores monthly `DID_RENEW` subscription renewals
 - Handles single-app and multi-app configurations
 - Deduplicates by `notificationUUID` for 30 days
 - Tracks lightweight subscription state per `originalTransactionId` for 730 days (trial/renewal context)
@@ -24,10 +25,12 @@ It verifies Apple-signed payloads, filters purchase/refund events, uses Upstash 
    - `PURCHASE`: `SUBSCRIBED`, `DID_RENEW`, `ONE_TIME_CHARGE`
    - `REFUND`: `REFUND`
    - everything else is ignored
-5. `notificationUUID` is written to Upstash Redis using `SET NX EX`.
-6. Subscription state is read/updated in Upstash Redis for lifecycle hints (`TRIAL_START`, `FIRST_PAID_AFTER_TRIAL`, `RENEWAL`) when possible.
-7. If the UUID is new, a Pushover message is sent.
-8. Structured JSON log entry is emitted (`ignored`, `deduped`, `pushed`, `error`).
+5. Sandbox notifications are acknowledged and ignored without sending Pushover.
+6. Monthly `DID_RENEW` renewals are acknowledged and ignored without sending Pushover.
+7. For Production notifications that are not filtered, `notificationUUID` is written to Upstash Redis using `SET NX EX`.
+8. Subscription state is read/updated in Upstash Redis for lifecycle hints (`TRIAL_START`, `FIRST_PAID_AFTER_TRIAL`, `RENEWAL`) when possible.
+9. If the UUID is new, a Pushover message is sent.
+10. Structured JSON log entry is emitted (`ignored`, `deduped`, `pushed`, `error`).
 
 ## Endpoint Contract
 
@@ -55,6 +58,8 @@ It verifies Apple-signed payloads, filters purchase/refund events, uses Upstash 
 
 ### Acknowledged but Ignored
 
+- Any notification with `environment=Sandbox`
+- Monthly `DID_RENEW` renewals
 - Any other App Store notification type
 
 ## Message Format (Pushover)
@@ -209,7 +214,7 @@ Behavior:
 3. In App Store Connect, configure App Store Server Notifications V2:
    - URL: `https://<your-domain>/api/app-store-notifications/<WEBHOOK_SECRET>`
    - Enable for Sandbox and Production
-4. Send a test notification and verify one Pushover message is received.
+4. Send a Production test notification and verify one Pushover message is received.
 
 ## Reliability and Idempotency
 

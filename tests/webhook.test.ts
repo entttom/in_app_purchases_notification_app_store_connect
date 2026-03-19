@@ -62,7 +62,7 @@ async function invokeHandler(
       notificationUUID: "uuid-1",
       notificationType: "SUBSCRIBED",
       subtype: null,
-      environment: "Sandbox",
+      environment: "Production",
       bundleId: "com.example.app",
       appAppleId: 1234567890,
       pushoverUserKey: "pushover-user-key",
@@ -131,6 +131,84 @@ describe("createWebhookHandler", () => {
     expect(sendPushover).toHaveBeenCalledTimes(1);
   });
 
+  it("ignores sandbox notifications", async () => {
+    const sendPushover = vi.fn().mockResolvedValue(undefined);
+    const markNotificationAsNew = vi.fn().mockResolvedValue(true);
+    const determineSubscriptionLifecycleHint = vi.fn().mockResolvedValue(undefined);
+    const response = await invokeHandler(
+      {
+        method: "POST",
+        query: { secret: "super-secret" },
+        body: { signedPayload: "jws-data" }
+      },
+      {
+        sendPushover,
+        markNotificationAsNew,
+        determineSubscriptionLifecycleHint,
+        verifyNotification: vi.fn().mockResolvedValue({
+          notificationUUID: "uuid-sandbox",
+          notificationType: "SUBSCRIBED",
+          subtype: null,
+          environment: "Sandbox",
+          bundleId: "com.example.app",
+          appAppleId: 1234567890,
+          pushoverUserKey: "pushover-user-key",
+          pushoverDevice: undefined,
+          transactionInfo: {
+            productId: "pro_monthly",
+            transactionId: "1000001234567890"
+          }
+        })
+      }
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(sendPushover).not.toHaveBeenCalled();
+    expect(markNotificationAsNew).not.toHaveBeenCalled();
+    expect(determineSubscriptionLifecycleHint).not.toHaveBeenCalled();
+    expect(response.jsonBody).toEqual({ ok: true, ignored: true });
+  });
+
+  it("ignores monthly renew notifications", async () => {
+    const sendPushover = vi.fn().mockResolvedValue(undefined);
+    const markNotificationAsNew = vi.fn().mockResolvedValue(true);
+    const determineSubscriptionLifecycleHint = vi.fn().mockResolvedValue(undefined);
+    const response = await invokeHandler(
+      {
+        method: "POST",
+        query: { secret: "super-secret" },
+        body: { signedPayload: "jws-data" }
+      },
+      {
+        sendPushover,
+        markNotificationAsNew,
+        determineSubscriptionLifecycleHint,
+        verifyNotification: vi.fn().mockResolvedValue({
+          notificationUUID: "uuid-monthly-renew",
+          notificationType: "DID_RENEW",
+          subtype: null,
+          environment: "Production",
+          bundleId: "com.example.app",
+          appAppleId: 1234567890,
+          pushoverUserKey: "pushover-user-key",
+          pushoverDevice: undefined,
+          transactionInfo: {
+            productId: "pro_monthly",
+            transactionId: "1000001234567890",
+            purchaseDate: Date.UTC(2026, 0, 1),
+            expiresDate: Date.UTC(2026, 1, 1)
+          }
+        })
+      }
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(sendPushover).not.toHaveBeenCalled();
+    expect(markNotificationAsNew).not.toHaveBeenCalled();
+    expect(determineSubscriptionLifecycleHint).not.toHaveBeenCalled();
+    expect(response.jsonBody).toEqual({ ok: true, ignored: true });
+  });
+
   it("sends one push for refund events", async () => {
     const sendPushover = vi.fn().mockResolvedValue(undefined);
     const response = await invokeHandler(
@@ -188,7 +266,9 @@ describe("createWebhookHandler", () => {
             productId: "pro_yearly",
             transactionId: "1000001111222233",
             transactionReason: "RENEWAL",
-            offerDiscountType: "FREE_TRIAL"
+            offerDiscountType: "FREE_TRIAL",
+            purchaseDate: Date.UTC(2026, 0, 1),
+            expiresDate: Date.UTC(2027, 0, 1)
           }
         })
       }
