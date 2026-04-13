@@ -9,7 +9,7 @@ It verifies Apple-signed payloads, filters purchase/refund events, uses Upstash 
 - Exposes a Vercel endpoint at `POST /api/app-store-notifications/<WEBHOOK_SECRET>`
 - Verifies `signedPayload` using Apple's official App Store Server library
 - Verifies both Sandbox and Production notifications, but only sends Pushover for Production
-- Ignores monthly `DID_RENEW` subscription renewals
+- Ignores free-trial starts and monthly `DID_RENEW` subscription renewals after the first paid renewal following a trial
 - Handles single-app and multi-app configurations
 - Deduplicates by `notificationUUID` for 30 days
 - Tracks lightweight subscription state per `originalTransactionId` for 730 days (trial/renewal context)
@@ -26,11 +26,12 @@ It verifies Apple-signed payloads, filters purchase/refund events, uses Upstash 
    - `REFUND`: `REFUND`
    - everything else is ignored
 5. Sandbox notifications are acknowledged and ignored without sending Pushover.
-6. Monthly `DID_RENEW` renewals are acknowledged and ignored without sending Pushover.
-7. For Production notifications that are not filtered, `notificationUUID` is written to Upstash Redis using `SET NX EX`.
-8. Subscription state is read/updated in Upstash Redis for lifecycle hints (`TRIAL_START`, `FIRST_PAID_AFTER_TRIAL`, `RENEWAL`) when possible.
-9. If the UUID is new, a Pushover message is sent.
-10. Structured JSON log entry is emitted (`ignored`, `deduped`, `pushed`, `error`).
+6. Free-trial starts are acknowledged and ignored without sending Pushover.
+7. Monthly `DID_RENEW` renewals are acknowledged and ignored without sending Pushover, except for the first paid renewal after a trial.
+8. For Production notifications that are not filtered, `notificationUUID` is written to Upstash Redis using `SET NX EX`.
+9. Subscription state is read/updated in Upstash Redis for lifecycle hints (`TRIAL_START`, `FIRST_PAID_AFTER_TRIAL`, `RENEWAL`) when possible.
+10. If the UUID is new, a Pushover message is sent.
+11. Structured JSON log entry is emitted (`ignored`, `deduped`, `pushed`, `error`).
 
 ## Endpoint Contract
 
@@ -59,7 +60,8 @@ It verifies Apple-signed payloads, filters purchase/refund events, uses Upstash 
 ### Acknowledged but Ignored
 
 - Any notification with `environment=Sandbox`
-- Monthly `DID_RENEW` renewals
+- `SUBSCRIBED` events that start a free trial (`offerDiscountType=FREE_TRIAL`)
+- Monthly `DID_RENEW` renewals after the first paid renewal following a trial
 - Any other App Store notification type
 
 ## Message Format (Pushover)

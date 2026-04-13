@@ -122,10 +122,55 @@ function isSandboxEnvironment(environment: string): boolean {
   return environment.trim().toLowerCase() === "sandbox";
 }
 
+function isLikelyFirstPaidAfterTrial(
+  verified: VerifiedNotification,
+  subscriptionLifecycle?: string
+): boolean {
+  if (subscriptionLifecycle === "FIRST_PAID_AFTER_TRIAL") {
+    return true;
+  }
+
+  const purchaseDate = verified.transactionInfo?.purchaseDate;
+  const originalPurchaseDate = verified.transactionInfo?.originalPurchaseDate;
+
+  if (
+    typeof purchaseDate !== "number" ||
+    !Number.isFinite(purchaseDate) ||
+    typeof originalPurchaseDate !== "number" ||
+    !Number.isFinite(originalPurchaseDate)
+  ) {
+    return false;
+  }
+
+  const deltaInDays =
+    (purchaseDate - originalPurchaseDate) / (24 * 60 * 60 * 1000);
+
+  return deltaInDays > 0 && deltaInDays < 27;
+}
+
+function isFreeTrialStartNotification(
+  verified: VerifiedNotification,
+  subscriptionLifecycle?: string
+): boolean {
+  if (subscriptionLifecycle === "TRIAL_START") {
+    return true;
+  }
+
+  return (
+    verified.notificationType === "SUBSCRIBED" &&
+    verified.transactionInfo?.offerDiscountType === "FREE_TRIAL"
+  );
+}
+
 function isLikelyMonthlyRenewNotification(
-  verified: VerifiedNotification
+  verified: VerifiedNotification,
+  subscriptionLifecycle?: string
 ): boolean {
   if (verified.notificationType !== "DID_RENEW") {
+    return false;
+  }
+
+  if (isLikelyFirstPaidAfterTrial(verified, subscriptionLifecycle)) {
     return false;
   }
 
@@ -218,12 +263,6 @@ export function createWebhookHandler(
       return;
     }
 
-    if (isLikelyMonthlyRenewNotification(verified)) {
-      deps.log(buildLogPayload("ignored", verified));
-      responseJson(response, 200, { ok: true, ignored: true });
-      return;
-    }
-
     try {
       const isNew = await deps.markNotificationAsNew(
         verified.notificationUUID,
@@ -245,6 +284,18 @@ export function createWebhookHandler(
         );
       } catch {
         subscriptionLifecycle = undefined;
+      }
+
+      if (isFreeTrialStartNotification(verified, subscriptionLifecycle)) {
+        deps.log(buildLogPayload("ignored", verified));
+        responseJson(response, 200, { ok: true, ignored: true });
+        return;
+      }
+
+      if (isLikelyMonthlyRenewNotification(verified, subscriptionLifecycle)) {
+        deps.log(buildLogPayload("ignored", verified));
+        responseJson(response, 200, { ok: true, ignored: true });
+        return;
       }
 
       const message = buildPushoverMessage({

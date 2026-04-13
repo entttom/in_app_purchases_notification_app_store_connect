@@ -204,8 +204,52 @@ describe("createWebhookHandler", () => {
 
     expect(response.statusCode).toBe(200);
     expect(sendPushover).not.toHaveBeenCalled();
-    expect(markNotificationAsNew).not.toHaveBeenCalled();
-    expect(determineSubscriptionLifecycleHint).not.toHaveBeenCalled();
+    expect(markNotificationAsNew).toHaveBeenCalledTimes(1);
+    expect(determineSubscriptionLifecycleHint).toHaveBeenCalledTimes(1);
+    expect(response.jsonBody).toEqual({ ok: true, ignored: true });
+  });
+
+  it("ignores free trial subscribe notifications", async () => {
+    const sendPushover = vi.fn().mockResolvedValue(undefined);
+    const markNotificationAsNew = vi.fn().mockResolvedValue(true);
+    const determineSubscriptionLifecycleHint = vi
+      .fn()
+      .mockResolvedValue("TRIAL_START");
+    const response = await invokeHandler(
+      {
+        method: "POST",
+        query: { secret: "super-secret" },
+        body: { signedPayload: "jws-data" }
+      },
+      {
+        sendPushover,
+        markNotificationAsNew,
+        determineSubscriptionLifecycleHint,
+        verifyNotification: vi.fn().mockResolvedValue({
+          notificationUUID: "uuid-trial-start",
+          notificationType: "SUBSCRIBED",
+          subtype: null,
+          environment: "Production",
+          bundleId: "com.example.app",
+          appAppleId: 1234567890,
+          pushoverUserKey: "pushover-user-key",
+          pushoverDevice: undefined,
+          transactionInfo: {
+            productId: "pro_monthly",
+            transactionId: "1000001234567890",
+            originalPurchaseDate: Date.UTC(2026, 0, 1),
+            purchaseDate: Date.UTC(2026, 0, 1),
+            expiresDate: Date.UTC(2026, 0, 8),
+            offerDiscountType: "FREE_TRIAL"
+          }
+        })
+      }
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(sendPushover).not.toHaveBeenCalled();
+    expect(markNotificationAsNew).toHaveBeenCalledTimes(1);
+    expect(determineSubscriptionLifecycleHint).toHaveBeenCalledTimes(1);
     expect(response.jsonBody).toEqual({ ok: true, ignored: true });
   });
 
@@ -269,6 +313,50 @@ describe("createWebhookHandler", () => {
             offerDiscountType: "FREE_TRIAL",
             purchaseDate: Date.UTC(2026, 0, 1),
             expiresDate: Date.UTC(2027, 0, 1)
+          }
+        })
+      }
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(sendPushover).toHaveBeenCalledTimes(1);
+    expect(sendPushover).toHaveBeenCalledWith(
+      expect.anything(),
+      "In-App Kauf",
+      expect.stringContaining("lifecycle=FIRST_PAID_AFTER_TRIAL"),
+      { userKey: "pushover-user-key", device: undefined }
+    );
+  });
+
+  it("sends a push for the first monthly renew after a trial", async () => {
+    const sendPushover = vi.fn().mockResolvedValue(undefined);
+    const response = await invokeHandler(
+      {
+        method: "POST",
+        query: { secret: "super-secret" },
+        body: { signedPayload: "jws-data" }
+      },
+      {
+        sendPushover,
+        determineSubscriptionLifecycleHint: vi
+          .fn()
+          .mockResolvedValue("FIRST_PAID_AFTER_TRIAL"),
+        verifyNotification: vi.fn().mockResolvedValue({
+          notificationUUID: "uuid-monthly-trial-renew",
+          notificationType: "DID_RENEW",
+          subtype: null,
+          environment: "Production",
+          bundleId: "com.example.app",
+          appAppleId: 1234567890,
+          pushoverUserKey: "pushover-user-key",
+          pushoverDevice: undefined,
+          transactionInfo: {
+            productId: "pro_monthly",
+            transactionId: "1000001111222233",
+            originalPurchaseDate: Date.UTC(2026, 0, 1),
+            purchaseDate: Date.UTC(2026, 0, 8),
+            expiresDate: Date.UTC(2026, 1, 8),
+            transactionReason: "RENEWAL"
           }
         })
       }
